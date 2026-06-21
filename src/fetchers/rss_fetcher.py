@@ -97,7 +97,7 @@ def fetch_crypto_news(lookback_hours: int | None = None) -> list[SocialSignal]:
                 all_signals.append(signal)
                 count += 1
 
-            log.debug(f"RSS {feed_name}: {count} artykułów")
+            log.info(f"RSS {feed_name}: {count} artykułów z ostatnich {lookback_h}h")
 
         except Exception as e:
             log.warning(f"RSS fetch error dla {feed_cfg.get('name', 'unknown')}: {e}")

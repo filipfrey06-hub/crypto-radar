@@ -86,7 +86,7 @@ rss:
     - "crypto regulation"
     - "strategic reserve"
     - "bitcoin reserve"
-  lookback_hours: 2
+  lookback_hours: 6
 
 # --------------- DEXSCREENER ------------------------------
 dexscreener:
