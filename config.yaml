@@ -19,7 +19,7 @@ activity:
   social_mention_spike_multiplier: 3.0  # wzmianki_24h / avg_wzmianki_7d >= X
   whale_inflow_usd: 10000           # min. whale buy w ciągu 1h żeby liczyć jako sygnał
   pump_fun_bonding_curve_pct: 50    # bonding curve progress >= X% to sygnał
-  min_score_for_hit: 2              # ile kryteriów musi być spełnione żeby HIT
+  min_score_for_hit: 1              # ile kryteriów musi być spełnione żeby HIT (safety już filtruje)
 
   # wagi poszczególnych sygnałów (suma → porównaj z min_score_for_hit)
   weights:

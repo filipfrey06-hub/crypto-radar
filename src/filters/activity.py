@@ -126,8 +126,8 @@ def score_token(
     # ── SYGNAŁ 6: New Token + Early Entry ──────────────────────────────────
     age_min = candidate.token_age_minutes
     checked["token_age_minutes"] = age_min
-    # Bonus za early: tokeny 30min - 4h stare z decent liquidity
-    is_early = 30 <= age_min <= 240 and candidate.liquidity_usd >= 50000
+    # Bonus za early: tokeny 30min - 4h stare (liquidity już sprawdzone w safety)
+    is_early = 30 <= age_min <= 240 and candidate.liquidity_usd >= 15000
     # Lub pump.fun w "sweet spot": 40-80% bonding curve
     is_pump_sweet_spot = candidate.is_pump_fun and 40 <= candidate.bonding_curve_pct <= 80
     if is_early or is_pump_sweet_spot:
@@ -142,7 +142,7 @@ def score_token(
     if is_hit:
         log.info(f"🎯 HIT: {candidate.symbol} score={score}/{len(weights)} — {', '.join(triggered)}")
     else:
-        log.debug(f"  MISS: {candidate.symbol} score={score}/{len(weights)}")
+        log.info(f"  MISS: {candidate.symbol} score={score}/{len(weights)} | sygnały={triggered or ['brak']}")
 
     return ActivityResult(
         is_hit=is_hit,
