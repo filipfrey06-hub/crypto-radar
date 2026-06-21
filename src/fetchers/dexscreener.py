@@ -191,10 +191,15 @@ def _parse_pair(pair: dict) -> TokenCandidate | None:
             source="dexscreener",
             source_url=pair.get("url", f"https://dexscreener.com/solana/{addr}"),
             extra={
-                "price_change_h1": price_change.get("h1"),
-                "price_change_h24": price_change.get("h24"),
+                "price_change_h1": float(price_change.get("h1") or 0),
+                "price_change_h6": float(price_change.get("h6") or 0),
+                "price_change_h24": float(price_change.get("h24") or 0),
+                "volume_h1": float(volume.get("h1") or 0),
+                "volume_h6": float(volume.get("h6") or 0),
                 "dex_id": pair.get("dexId"),
                 "pair_address": pair.get("pairAddress"),
+                "txns_h1_buys": pair.get("txns", {}).get("h1", {}).get("buys", 0),
+                "txns_h1_sells": pair.get("txns", {}).get("h1", {}).get("sells", 0),
                 "txns_h24_buys": pair.get("txns", {}).get("h24", {}).get("buys", 0),
                 "txns_h24_sells": pair.get("txns", {}).get("h24", {}).get("sells", 0),
             }

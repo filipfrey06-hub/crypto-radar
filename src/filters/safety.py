@@ -165,6 +165,23 @@ def run_safety_filter(candidate: TokenCandidate, enrich_from_rugcheck: bool = Tr
     if candidate.holder_count > 0 and candidate.holder_count < min_holders:
         warnings.append(f"Mała liczba holderów ({candidate.holder_count} < {min_holders}) — mała dystrybucja")
 
+    # ── CHECK 9: Honeypot / High Tax / Cannot Sell ─────────────────────────
+    rugcheck_risks = candidate.extra.get("rugcheck_risks", [])
+    if rugcheck_risks:
+        risk_names_lower = [r.lower() for r in rugcheck_risks]
+        honeypot_keywords = [
+            "honeypot", "cannot sell", "high sell tax", "sell tax",
+            "high buy tax", "transfer fee", "cannot buy", "freeze"
+        ]
+        tax_issues = []
+        for risk in risk_names_lower:
+            if any(kw in risk for kw in honeypot_keywords):
+                tax_issues.append(risk)
+
+        if tax_issues:
+            reasons.append(f"Honeypot/tax: {', '.join(tax_issues[:3])} — możliwy scam")
+        checks["tax_issues"] = tax_issues
+
     passed = len(reasons) == 0
 
     if passed:

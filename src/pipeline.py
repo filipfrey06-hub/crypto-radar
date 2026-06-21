@@ -225,25 +225,52 @@ def run_whale_scan() -> dict:
         except Exception as e:
             stats["errors"].append(f"trending: {e}")
 
-        # Sprawdź whale transactions dla każdego
+        # Whale detection przez DexScreener metrics (bez Birdeye — wymaga klucza)
+        # Proxy: wysoki volume h1 relative do średniej, duży price move, buy pressure
         whale_threshold = cfg["birdeye"]["whale_threshold_usd"]
-        for candidate in candidates[:15]:  # limit API calls
+        for candidate in candidates:
             try:
-                whale_txs = birdeye_api.get_whale_transactions(
-                    candidate.address,
-                    min_usd=whale_threshold
-                )
-                if whale_txs:
-                    total_inflow = sum(
-                        float(tx.get("volumeInUSD", tx.get("value", 0)) or 0)
-                        for tx in whale_txs
-                        if tx.get("side", tx.get("type", "")) in ["buy", "in"]
-                    )
-                    candidate.extra["whale_inflow_usd"] = total_inflow
-                    candidate.extra["whale_tx_count"] = len(whale_txs)
-                    log.debug(f"  {candidate.symbol}: whale inflow ${total_inflow:,.0f} ({len(whale_txs)} txs)")
+                vol_h1 = float(candidate.extra.get("volume_h1", 0) or 0)
+                vol_h24 = candidate.volume_24h
+                price_change_h1 = float(candidate.extra.get("price_change_h1", 0) or 0)
+                txns_h1_buys = int(candidate.extra.get("txns_h1_buys", 0) or 0)
+                txns_h1_sells = int(candidate.extra.get("txns_h1_sells", 0) or 0)
+                liquidity = candidate.liquidity_usd
+
+                whale_inflow = 0.0
+                whale_signals = []
+
+                # Sygnał 1: volume h1 >> średnia godzina (3× average = spike)
+                if vol_h24 > 0 and vol_h1 > 0:
+                    avg_hour = vol_h24 / 24
+                    h1_ratio = vol_h1 / avg_hour if avg_hour > 0 else 0
+                    if h1_ratio >= 3.0:
+                        whale_inflow = max(whale_inflow, vol_h1)
+                        whale_signals.append(f"vol_h1={h1_ratio:.1f}×avg")
+
+                # Sygnał 2: volume h1 > X% płynności (duży ruch relative do pool)
+                if liquidity > 0 and vol_h1 > 0 and vol_h1 / liquidity >= 0.4:
+                    whale_inflow = max(whale_inflow, vol_h1)
+                    whale_signals.append(f"vol/liq={vol_h1/liquidity*100:.0f}%")
+
+                # Sygnał 3: silny ruch ceny w 1h (>15%) = prawdopodobny whale pump
+                if abs(price_change_h1) >= 15:
+                    whale_inflow = max(whale_inflow, vol_h1)
+                    whale_signals.append(f"price_h1={price_change_h1:+.0f}%")
+
+                # Sygnał 4: buy pressure (buys >> sells w h1)
+                total_h1 = txns_h1_buys + txns_h1_sells
+                if total_h1 > 10 and txns_h1_buys / total_h1 >= 0.7:
+                    whale_inflow = max(whale_inflow, vol_h1)
+                    whale_signals.append(f"buy_pressure={txns_h1_buys/total_h1*100:.0f}%")
+
+                if whale_inflow >= whale_threshold:
+                    candidate.extra["whale_inflow_usd"] = whale_inflow
+                    candidate.extra["whale_signals"] = whale_signals
+                    log.info(f"  🐋 {candidate.symbol}: whale proxy ${whale_inflow:,.0f} | {', '.join(whale_signals)}")
+
             except Exception as e:
-                log.debug(f"whale check error {candidate.symbol}: {e}")
+                log.debug(f"whale proxy error {candidate.symbol}: {e}")
 
         stats["total_candidates"] = len(candidates)
         stats = _run_token_pipeline(candidates, [], run_id, stats)
