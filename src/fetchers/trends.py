@@ -78,7 +78,11 @@ def fetch_trending_searches() -> list[SocialSignal]:
             time.sleep(1.5)  # rate limit protection
 
         except Exception as e:
-            log.warning(f"Google Trends error dla chunk {chunk}: {e}")
+            err_str = str(e)
+            if "429" in err_str or "too many" in err_str.lower():
+                log.debug("Google Trends: rate limit (429) — IP serwera zablokowany przez Google, pomijam")
+            else:
+                log.warning(f"Google Trends error dla chunk {chunk}: {e}")
             time.sleep(5)
             continue
 
