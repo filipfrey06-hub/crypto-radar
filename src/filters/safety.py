@@ -119,11 +119,12 @@ def run_safety_filter(candidate: TokenCandidate, enrich_from_rugcheck: bool = Tr
             pass  # LP locked >= 80% — OK
         elif candidate.lp_locked is False:
             lock_pct = candidate.lp_lock_pct
-            # Jeśli RugCheck score wysoki (>= 500), LP częściowo locked (>= 50%) → ostrzeżenie, nie hard stop
-            if rugcheck_score >= 500 and lock_pct >= 50:
+            # score=1 = RugCheck nie ma danych o tym tokenie (za nowy/mały) → nie karaj
+            if rugcheck_score <= 1:
+                warnings.append(f"LP {lock_pct:.0f}% locked — RugCheck brak danych (score=1), nie można zweryfikować")
+            elif rugcheck_score >= 500 and lock_pct >= 50:
                 warnings.append(f"LP tylko {lock_pct:.0f}% locked (ale RugCheck score={rugcheck_score} — OK)")
             elif rugcheck_score >= 700:
-                # Bardzo dobry score RugCheck = zaufaj jego ocenie
                 warnings.append(f"LP {lock_pct:.0f}% locked — RugCheck score wysoki ({rugcheck_score}), akceptuję")
             else:
                 reasons.append(f"LP niezablokowane (locked: {lock_pct:.0f}%, score={rugcheck_score}) — ryzyko rug")
@@ -138,10 +139,14 @@ def run_safety_filter(candidate: TokenCandidate, enrich_from_rugcheck: bool = Tr
     top10_pct = candidate.top10_holder_pct
     max_top10 = scfg["max_top10_holder_pct"]
     checks["top10_holder_pct"] = top10_pct
-    if top10_pct > max_top10:
+    # Pump.fun pre-graduation: bonding curve trzyma większość tokenów — to normalne
+    if candidate.is_pump_fun and candidate.bonding_curve_pct < 100:
+        if top10_pct > 95:
+            warnings.append(f"Pump.fun pre-graduation — top10={top10_pct:.0f}% (normalne dla bonding curve)")
+    elif top10_pct > max_top10:
         reasons.append(f"Top 10 holderów ma {top10_pct:.0f}% supply (> {max_top10}%) — wysokie ryzyko dump")
-    elif top10_pct > max_top10* 0.75:
-        warnings.append(f"Top 10 holderów ma {top10_pct:.0f}% supply — lekko skoncentrowane")
+    elif top10_pct > max_top10 * 0.85:
+        warnings.append(f"Top 10 holderów ma {top10_pct:.0f}% supply — skoncentrowane")
 
     # ── CHECK 7: Pump.fun dev sell ──────────────────────────────────────────
     if candidate.is_pump_fun:

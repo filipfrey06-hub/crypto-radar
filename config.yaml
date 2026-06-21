@@ -6,7 +6,7 @@
 # --------------- PROGI SAFETY FILTER (Warstwa 2) ------------
 safety:
   min_liquidity_usd: 15000          # poniżej → hard stop (DexScreener przynosi od 10k)
-  max_top10_holder_pct: 40          # top 10 walletów max % supply
+  max_top10_holder_pct: 80          # top 10 walletów max % supply (nowe tokeny mają naturalne 60-80%)
   require_mint_disabled: true       # mint authority musi być wyłączone
   require_freeze_disabled: true     # freeze authority musi być wyłączone
   require_lp_locked: true           # LP musi być locked lub burned
