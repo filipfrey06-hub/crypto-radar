@@ -28,17 +28,18 @@ class SafetyResult:
     checks: dict                # wyniki poszczególnych sprawdzeń
 
 
-def run_safety_filter(candidate: TokenCandidate, enrich_from_birdeye: bool = True) -> SafetyResult:
+def run_safety_filter(candidate: TokenCandidate, enrich_from_rugcheck: bool = True) -> SafetyResult:
     """
     Uruchom pełny safety filter na kandydacie.
 
-    enrich_from_birdeye: jeśli True, pobierz brakujące dane z Birdeye przed filtrowaniem.
-    Ustaw na False jeśli dane są już uzupełnione lub chcesz oszczędzić API calls.
+    enrich_from_rugcheck: jeśli True, pobierz dane z RugCheck przed filtrowaniem.
     """
     scfg = cfg["safety"]
+    rugcheck_score = 0
+    lp_burned = False
 
     # Uzupełnij dane z RugCheck jeśli brakuje kluczowych pól
-    if enrich_from_birdeye and _needs_enrichment(candidate):
+    if enrich_from_rugcheck and _needs_enrichment(candidate):
         try:
             report = rugcheck_api.get_token_report(candidate.address)
             if report["mint_disabled"] is not None:
@@ -51,8 +52,18 @@ def run_safety_filter(candidate: TokenCandidate, enrich_from_birdeye: bool = Tru
             if report["top10_holder_pct"] > 0:
                 candidate.top10_holder_pct = report["top10_holder_pct"]
             # Dodaj RugCheck score i ryzyka do extra
-            candidate.extra["rugcheck_score"] = report["rugcheck_score"]
+            rugcheck_score = report["rugcheck_score"]
+            candidate.extra["rugcheck_score"] = rugcheck_score
             candidate.extra["rugcheck_risks"] = report["risks"]
+
+            # Sprawdź czy LP jest burned (trwale spalony = bezpieczniejszy niż locked)
+            risk_names_lower = [r.lower() for r in report["risks"]]
+            lp_burned = any("burned" in r for r in risk_names_lower) or \
+                        any("lp burned" in r for r in risk_names_lower)
+            if lp_burned:
+                candidate.lp_locked = True  # burned = effectively locked navždy
+                candidate.lp_lock_pct = 100.0
+
         except Exception as e:
             log.warning(f"RugCheck enrichment failed dla {candidate.symbol}: {e}")
 
@@ -97,14 +108,31 @@ def run_safety_filter(candidate: TokenCandidate, enrich_from_birdeye: bool = Tru
     # ── CHECK 5: LP Lock ────────────────────────────────────────────────────
     checks["lp_locked"] = candidate.lp_locked
     checks["lp_lock_pct"] = candidate.lp_lock_pct
+    checks["lp_burned"] = lp_burned
     if scfg["require_lp_locked"]:
         # Wyjątek: Pump.fun tokeny przed graduation nie mają LP (bonding curve)
         if candidate.is_pump_fun and candidate.bonding_curve_pct < 100:
             warnings.append("Pump.fun pre-graduation — brak LP (to normalne), sprawdź po graduation")
+        elif lp_burned:
+            pass  # LP burned = trwale spalony, bezpieczniejszy niż locked
+        elif candidate.lp_locked is True:
+            pass  # LP locked >= 80% — OK
         elif candidate.lp_locked is False:
-            reasons.append(f"LP niezablokowane/niespalonych — klasyczny rug (locked: {candidate.lp_lock_pct:.0f}%)")
+            lock_pct = candidate.lp_lock_pct
+            # Jeśli RugCheck score wysoki (>= 500), LP częściowo locked (>= 50%) → ostrzeżenie, nie hard stop
+            if rugcheck_score >= 500 and lock_pct >= 50:
+                warnings.append(f"LP tylko {lock_pct:.0f}% locked (ale RugCheck score={rugcheck_score} — OK)")
+            elif rugcheck_score >= 700:
+                # Bardzo dobry score RugCheck = zaufaj jego ocenie
+                warnings.append(f"LP {lock_pct:.0f}% locked — RugCheck score wysoki ({rugcheck_score}), akceptuję")
+            else:
+                reasons.append(f"LP niezablokowane (locked: {lock_pct:.0f}%, score={rugcheck_score}) — ryzyko rug")
         elif candidate.lp_locked is None and not candidate.is_pump_fun:
-            warnings.append("Nie udało się zweryfikować LP lock")
+            # Brak danych — jeśli RugCheck score jest dobry, to tylko ostrzeżenie
+            if rugcheck_score >= 500:
+                warnings.append(f"LP lock nieznany — RugCheck score={rugcheck_score} (akceptowalny)")
+            else:
+                warnings.append("Nie udało się zweryfikować LP lock — dane niedostępne")
 
     # ── CHECK 6: Holder Concentration ──────────────────────────────────────
     top10_pct = candidate.top10_holder_pct
@@ -131,9 +159,9 @@ def run_safety_filter(candidate: TokenCandidate, enrich_from_birdeye: bool = Tru
     passed = len(reasons) == 0
 
     if passed:
-        log.debug(f"✅ SAFETY PASS: {candidate.symbol} ({candidate.address[:8]}...)")
+        log.info(f"✅ SAFETY PASS: {candidate.symbol} | liq=${candidate.liquidity_usd:,.0f} | lp={candidate.lp_lock_pct:.0f}% | rc={rugcheck_score}")
     else:
-        log.debug(f"❌ SAFETY FAIL: {candidate.symbol} — {'; '.join(reasons)}")
+        log.info(f"❌ SAFETY FAIL: {candidate.symbol} ({candidate.address[:8]}) — {'; '.join(reasons)}")
 
     return SafetyResult(
         passed=passed,
@@ -147,27 +175,41 @@ def run_safety_filter(candidate: TokenCandidate, enrich_from_birdeye: bool = Tru
 
 def batch_safety_filter(
     candidates: list[TokenCandidate],
-    enrich_from_birdeye: bool = True,
+    enrich_from_rugcheck: bool = True,
 ) -> tuple[list[TokenCandidate], list[SafetyResult]]:
     """
     Uruchom safety filter na liście kandydatów.
     Zwraca (passed_candidates, all_results).
 
-    Loguje podsumowanie: ile przeszło / ile odrzucono.
+    Loguje podsumowanie: ile przeszło / ile odrzucono i z jakiego powodu.
     """
     passed = []
     results = []
+    rejection_counts: dict[str, int] = {}
 
     for c in candidates:
-        result = run_safety_filter(c, enrich_from_birdeye=enrich_from_birdeye)
+        result = run_safety_filter(c, enrich_from_rugcheck=enrich_from_rugcheck)
         results.append(result)
         if result.passed:
             passed.append(c)
+        else:
+            # Zbierz statystyki powodów odrzucenia
+            for reason in result.reasons:
+                # Skróć reason do pierwszego słowa kluczowego
+                key = reason.split("(")[0].strip()[:50]
+                rejection_counts[key] = rejection_counts.get(key, 0) + 1
 
     log.info(
         f"Safety filter: {len(passed)}/{len(candidates)} przeszło "
         f"({len(candidates) - len(passed)} odrzuconych)"
     )
+
+    # Pokaż top powody odrzucenia
+    if rejection_counts:
+        top_reasons = sorted(rejection_counts.items(), key=lambda x: -x[1])[:5]
+        for reason, count in top_reasons:
+            log.info(f"  └─ [{count}x] {reason}")
+
     return passed, results
 
 

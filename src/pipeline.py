@@ -369,7 +369,7 @@ def _run_token_pipeline(
         candidates = candidates[:max_cand]
 
     # ── WARSTWA 2: SAFETY FILTER ───────────────────────────────────────────
-    passed_candidates, safety_results = batch_safety_filter(candidates, enrich_from_birdeye=True)
+    passed_candidates, safety_results = batch_safety_filter(candidates, enrich_from_rugcheck=True)
     safety_map = {r.token_address: r for r in safety_results}
     stats["safety_passed"] = len(passed_candidates)
 
