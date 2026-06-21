@@ -1,0 +1,52 @@
+name: Social Scan — Reddit, Trends, RSS
+
+on:
+  schedule:
+    # Co godzinę (offset 15 minut żeby nie nakładać się z fast-scan)
+    - cron: '15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  social-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download state DB
+        uses: actions/download-artifact@v4
+        with:
+          name: state-db
+          path: data/
+        continue-on-error: true
+
+      - name: Run social scan
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT }}
+        run: python scripts/social_scan.py
+
+      - name: Upload state DB
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: state-db
+          path: data/state.db
+          retention-days: 7
+          overwrite: true

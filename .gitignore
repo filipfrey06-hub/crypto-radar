@@ -1,0 +1,33 @@
+# Środowisko
+.env
+*.env.local
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Dane i logi (nie commituj state.db — jest artefaktem GitHub Actions)
+data/state.db
+logs/*.jsonl
+logs/*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test outputs
+.pytest_cache/
+*.coverage
+htmlcov/

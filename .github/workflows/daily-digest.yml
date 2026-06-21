@@ -1,0 +1,49 @@
+name: Daily Digest — statystyki 24h
+
+on:
+  schedule:
+    # Codziennie o 8:00 czasu polskiego = 6:00 UTC (lato) / 7:00 UTC (zima)
+    # Ustawiamy 6:00 UTC żeby było ok latem, zimą przyjdzie godzinę wcześniej
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  daily-digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download state DB
+        uses: actions/download-artifact@v4
+        with:
+          name: state-db
+          path: data/
+        continue-on-error: true
+
+      - name: Run daily digest
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python scripts/daily_digest.py
+
+      - name: Upload state DB
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: state-db
+          path: data/state.db
+          retention-days: 7
+          overwrite: true

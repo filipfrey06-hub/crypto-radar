@@ -1,0 +1,49 @@
+name: Whale Scan — duże transakcje
+
+on:
+  schedule:
+    # Co godzinę (offset 45 minut)
+    - cron: '45 * * * *'
+  workflow_dispatch:
+
+jobs:
+  whale-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download state DB
+        uses: actions/download-artifact@v4
+        with:
+          name: state-db
+          path: data/
+        continue-on-error: true
+
+      - name: Run whale scan
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python scripts/whale_scan.py
+
+      - name: Upload state DB
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: state-db
+          path: data/state.db
+          retention-days: 7
+          overwrite: true

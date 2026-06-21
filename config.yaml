@@ -1,0 +1,159 @@
+# ============================================================
+#  Crypto Radar — konfiguracja progów i źródeł
+#  Zmień wartości tutaj zamiast grzebać w kodzie.
+# ============================================================
+
+# --------------- PROGI SAFETY FILTER (Warstwa 2) ------------
+safety:
+  min_liquidity_usd: 30000          # poniżej → hard stop
+  max_top10_holder_pct: 40          # top 10 walletów max % supply
+  require_mint_disabled: true       # mint authority musi być wyłączone
+  require_freeze_disabled: true     # freeze authority musi być wyłączone
+  require_lp_locked: true           # LP musi być locked lub burned
+  min_token_age_minutes: 5          # ignoruj tokeny młodsze niż X min (instant rug trap)
+  max_token_age_hours: 72           # ignoruj starsze niż X godzin (early detection focus)
+
+# --------------- PROGI ACTIVITY SCORER (Warstwa 3) ----------
+activity:
+  volume_spike_multiplier: 3.0      # volume_24h / avg_volume_7d musi być >= X
+  social_mention_spike_multiplier: 3.0  # wzmianki_24h / avg_wzmianki_7d >= X
+  whale_inflow_usd: 10000           # min. whale buy w ciągu 1h żeby liczyć jako sygnał
+  pump_fun_bonding_curve_pct: 50    # bonding curve progress >= X% to sygnał
+  min_score_for_hit: 2              # ile kryteriów musi być spełnione żeby HIT
+
+  # wagi poszczególnych sygnałów (suma → porównaj z min_score_for_hit)
+  weights:
+    volume_spike: 1
+    social_spike: 1
+    whale_inflow: 1
+    bonding_curve: 1
+    narrative_keyword: 1
+    new_token_early: 1
+
+# --------------- NARRACJE DO ŚLEDZENIA ----------------------
+narratives:
+  keywords:
+    AI: ["ai agent", "artificial intelligence", "llm", "gpt", "neural", "agi", "compute"]
+    DePIN: ["depin", "physical infrastructure", "hotspot", "node", "bandwidth", "gpu network"]
+    RWA: ["real world asset", "rwa", "tokenized", "treasury", "real estate token"]
+    Gaming: ["gamefi", "play to earn", "p2e", "metaverse", "nft game", "web3 game"]
+    Meme: ["meme", "doge", "pepe", "wojak", "chad", "giga", "pump"]
+    Political: ["trump", "elon", "musk", "congress", "sec", "fed", "etf", "regulation"]
+    Solana: ["solana", "sol", "pump.fun", "raydium", "jupiter", "jup"]
+
+# --------------- REDDIT SOURCES -----------------------------
+reddit:
+  subreddits:
+    - "solana"
+    - "CryptoMoonShots"
+    - "SatoshiStreetBets"
+    - "altcoin"
+    - "CryptoCurrency"
+    - "memecoin"
+    - "Superstonk"   # dla makro sentymentu
+  min_upvote_ratio: 0.7
+  min_score: 10
+  lookback_hours: 6
+
+# --------------- GOOGLE TRENDS ------------------------------
+google_trends:
+  keywords_to_track:
+    - "solana memecoin"
+    - "pump fun"
+    - "crypto pump"
+    - "new crypto"
+    - "bitcoin pump"
+  timeframe: "now 1-d"
+  spike_threshold: 70               # Trends score 0-100, >= X = spike
+
+# --------------- RSS / NEWS FEEDS ---------------------------
+rss:
+  feeds:
+    - url: "https://cryptopanic.com/news/rss/"
+      name: "CryptoPanic"
+    - url: "https://cointelegraph.com/rss"
+      name: "CoinTelegraph"
+    - url: "https://decrypt.co/feed"
+      name: "Decrypt"
+    - url: "https://www.theblock.co/rss.xml"
+      name: "TheBlock"
+  politician_keywords:
+    - "trump crypto"
+    - "senator crypto"
+    - "congress bitcoin"
+    - "sec crypto"
+    - "executive order crypto"
+    - "crypto regulation"
+    - "strategic reserve"
+    - "bitcoin reserve"
+  lookback_hours: 2
+
+# --------------- DEXSCREENER ------------------------------
+dexscreener:
+  chains: ["solana"]
+  min_liquidity_usd: 10000
+  max_pair_age_hours: 48
+  min_volume_24h: 5000
+
+# --------------- BIRDEYE (free tier) -----------------------
+birdeye:
+  base_url: "https://public-api.birdeye.so"
+  min_holder_count: 50              # filtruj tokeny z za małą liczbą holderów
+  whale_threshold_usd: 10000
+
+# --------------- RUGCHECK ----------------------------------
+rugcheck:
+  base_url: "https://api.rugcheck.xyz/v1"
+  min_score: 500                    # RugCheck score >= X (max 1000)
+  # Uwaga: RugCheck score = bezpieczeństwo, wyższy = bezpieczniejszy
+
+# --------------- CLAUDE API SCORING ------------------------
+claude:
+  model: "claude-haiku-4-5-20251001"   # haiku = tani do scoringu
+  max_tokens: 500
+  # Scoring prompt — tutaj możesz dostroić co Claude ocenia
+  scoring_prompt: |
+    Jesteś ekspertem od krypto analizy ryzyka i narracji. Oceniasz token pod kątem
+    wczesnego wykrycia sygnału. NIE dajesz rekomendacji kupna/sprzedaży.
+
+    Token: {token_name} ({symbol})
+    Chain: {chain}
+    Dane:
+    {token_data}
+
+    Odpowiedz TYLKO w tym formacie JSON (bez dodatkowego tekstu):
+    {{
+      "priority": "HIGH|MED|LOW",
+      "narrative": "krótka narracja kategorii (np. AI agent memecoin, DePIN, Political catalyst)",
+      "is_first_mover": true|false,
+      "key_signals": ["sygnał 1", "sygnał 2"],
+      "red_flags": ["flaga 1"] or [],
+      "one_liner": "jeden zdanie po polsku do Telegrama (max 100 znaków)",
+      "risk_level": "VERY_HIGH|HIGH|MED|LOW"
+    }}
+
+# --------------- ALERTY ------------------------------------
+alerts:
+  telegram:
+    # TELEGRAM_BOT_TOKEN i TELEGRAM_CHAT_ID ustawione w GitHub Secrets / .env
+    send_high: true
+    send_med: true
+    send_low: false         # LOW trafia tylko do daily digest
+    parse_mode: "HTML"
+
+  ntfy:
+    # NTFY_TOPIC ustawiony w GitHub Secrets / .env
+    base_url: "https://ntfy.sh"
+    send_only_high: true    # ntfy push tylko dla HIGH priority
+    priority_map:
+      HIGH: 5
+      MED: 3
+      LOW: 1
+
+# --------------- OGÓLNE ------------------------------------
+general:
+  dry_run: false            # true = nie wysyłaj alertów, tylko loguj
+  log_level: "INFO"         # DEBUG | INFO | WARNING | ERROR
+  state_db_path: "data/state.db"
+  scan_log_path: "logs/scan_log.jsonl"
+  max_candidates_per_run: 50  # zabezpieczenie przed runaway API calls
