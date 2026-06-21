@@ -41,9 +41,17 @@ def fetch_crypto_news(lookback_hours: int | None = None) -> list[SocialSignal]:
 
     for feed_cfg in rcfg["feeds"]:
         try:
-            feed = feedparser.parse(feed_cfg["url"])
+            import socket
             feed_name = feed_cfg["name"]
             count = 0
+            # Timeout przez requests + przekaż do feedparser
+            try:
+                import requests as _req
+                resp = _req.get(feed_cfg["url"], timeout=10, headers={"User-Agent": "crypto-radar/2.0"})
+                feed = feedparser.parse(resp.text)
+            except Exception as fetch_err:
+                log.warning(f"RSS {feed_name}: timeout/błąd pobierania — {fetch_err}")
+                continue
 
             for entry in feed.entries:
                 # Parsuj datę publikacji

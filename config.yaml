@@ -69,14 +69,16 @@ google_trends:
 # --------------- RSS / NEWS FEEDS ---------------------------
 rss:
   feeds:
-    - url: "https://cryptopanic.com/news/rss/"
-      name: "CryptoPanic"
     - url: "https://cointelegraph.com/rss"
       name: "CoinTelegraph"
     - url: "https://decrypt.co/feed"
       name: "Decrypt"
     - url: "https://www.theblock.co/rss.xml"
       name: "TheBlock"
+    - url: "https://coindesk.com/arc/outboundfeeds/rss/"
+      name: "CoinDesk"
+    - url: "https://bitcoinist.com/feed/"
+      name: "Bitcoinist"
   politician_keywords:
     - "trump crypto"
     - "senator crypto"
