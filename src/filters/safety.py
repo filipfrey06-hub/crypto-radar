@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from ..fetchers.models import TokenCandidate
-from ..fetchers import birdeye as birdeye_api
+from ..fetchers import rugcheck as rugcheck_api
 from ..config import cfg
 
 log = logging.getLogger(__name__)
@@ -37,12 +37,24 @@ def run_safety_filter(candidate: TokenCandidate, enrich_from_birdeye: bool = Tru
     """
     scfg = cfg["safety"]
 
-    # Uzupełnij dane z Birdeye jeśli brakuje kluczowych pól
+    # Uzupełnij dane z RugCheck jeśli brakuje kluczowych pól
     if enrich_from_birdeye and _needs_enrichment(candidate):
         try:
-            candidate = birdeye_api.enrich_candidate(candidate)
+            report = rugcheck_api.get_token_report(candidate.address)
+            if report["mint_disabled"] is not None:
+                candidate.mint_disabled = report["mint_disabled"]
+            if report["freeze_disabled"] is not None:
+                candidate.freeze_disabled = report["freeze_disabled"]
+            if report["lp_locked"] is not None:
+                candidate.lp_locked = report["lp_locked"]
+                candidate.lp_lock_pct = report["lp_lock_pct"]
+            if report["top10_holder_pct"] > 0:
+                candidate.top10_holder_pct = report["top10_holder_pct"]
+            # Dodaj RugCheck score i ryzyka do extra
+            candidate.extra["rugcheck_score"] = report["rugcheck_score"]
+            candidate.extra["rugcheck_risks"] = report["risks"]
         except Exception as e:
-            log.warning(f"Birdeye enrichment failed dla {candidate.symbol}: {e}")
+            log.warning(f"RugCheck enrichment failed dla {candidate.symbol}: {e}")
 
     reasons: list[str] = []
     warnings: list[str] = []

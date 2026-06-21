@@ -18,21 +18,31 @@ from ..config import cfg
 
 log = logging.getLogger(__name__)
 
-PUMP_API = "https://frontend-api.pump.fun"
+PUMP_API = "https://frontend-api-v3.pump.fun"
+PUMP_API_V2 = "https://frontend-api-v2.pump.fun"
 HEADERS = {
     "Accept": "application/json",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Origin": "https://pump.fun",
+    "Referer": "https://pump.fun/",
 }
 
 
 def _get(url: str, params: dict | None = None, timeout: int = 15) -> dict | list | None:
-    try:
-        r = requests.get(url, params=params, headers=HEADERS, timeout=timeout)
-        r.raise_for_status()
-        return r.json()
-    except requests.RequestException as e:
-        log.warning(f"Pump.fun request failed: {e} | url={url}")
-        return None
+    """Próbuje główne URL, potem fallback na v2."""
+    for base_url in [url, url.replace(PUMP_API, PUMP_API_V2)]:
+        try:
+            r = requests.get(base_url, params=params, headers=HEADERS, timeout=timeout)
+            if r.status_code == 530:
+                log.debug(f"Pump.fun 530 na {base_url}, próbuję fallback...")
+                continue
+            r.raise_for_status()
+            return r.json()
+        except requests.RequestException as e:
+            log.debug(f"Pump.fun request failed: {e} | url={base_url}")
+            continue
+    log.warning(f"Pump.fun niedostępny (wszystkie endpointy zwróciły błąd)")
+    return None
 
 
 def fetch_new_launches(limit: int = 50, min_market_cap: float = 5000) -> list[TokenCandidate]:
