@@ -143,6 +143,10 @@ def run_safety_filter(candidate: TokenCandidate, enrich_from_rugcheck: bool = Tr
     if candidate.is_pump_fun and candidate.bonding_curve_pct < 100:
         if top10_pct > 95:
             warnings.append(f"Pump.fun pre-graduation — top10={top10_pct:.0f}% (normalne dla bonding curve)")
+    elif top10_pct == 0 or rugcheck_score <= 1:
+        # Brak danych RugCheck (score=1) lub holder_pct=0 → pomiń, nie karaj za brak danych
+        if top10_pct == 0:
+            warnings.append("Dane o holderach niedostępne — nie można zweryfikować koncentracji")
     elif top10_pct > max_top10:
         reasons.append(f"Top 10 holderów ma {top10_pct:.0f}% supply (> {max_top10}%) — wysokie ryzyko dump")
     elif top10_pct > max_top10 * 0.85:

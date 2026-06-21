@@ -118,7 +118,14 @@ def get_token_report(mint_address: str) -> dict:
             if h.get("address", "").lower() not in burn_addresses
             and not h.get("isOwner", False)
         ]
-        total_pct = sum(float(h.get("pct", 0)) * 100 for h in top10)
+        # RugCheck zwraca pct jako % (0-100), NIE jako ułamek (0-1)
+        raw_values = [float(h.get("pct", 0) or 0) for h in top10]
+        if raw_values and max(raw_values, default=0) > 1.0:
+            # Już w procentach — nie mnóż przez 100
+            total_pct = sum(raw_values)
+        else:
+            # Ułamki dziesiętne (0.0-1.0) → konwertuj na %
+            total_pct = sum(v * 100 for v in raw_values)
         result["top10_holder_pct"] = min(100.0, total_pct)
 
     log.debug(
