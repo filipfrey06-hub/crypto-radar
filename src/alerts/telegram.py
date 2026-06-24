@@ -403,3 +403,91 @@ def send_avici_social_alert(
 🔗 <a href='{url}'>Czytaj więcej</a>"""
 
     return _send_message(msg, chat_id=avici_chat_id, bot_token=avici_bot_token)
+
+
+# ── TREND DETECTION alerty ───────────────────────────────────────────────────
+
+def send_trend_alert(
+    category: str,
+    strength: float,
+    score: int,
+    evidence: list[str],
+    is_new: bool,
+    matching_tokens: list[dict],
+    macro_signals: list[str],
+    bot_token: Optional[str] = None,
+    chat_id: Optional[str] = None,
+) -> bool:
+    """Alert o wykrytym trendzie narracyjnym + pasujące tokeny."""
+    fire_emoji = "🔥" * min(3, max(1, score // 3))
+    new_tag = " 🆕 NOWA NARRACJA" if is_new else ""
+
+    evidence_text = "\n".join(f"  • {e}" for e in evidence[:4])
+
+    tokens_section = ""
+    if matching_tokens:
+        lines = []
+        for t in matching_tokens[:5]:
+            mc = t.get("market_cap_usd", 0)
+            change = t.get("price_change_h24", 0)
+            liq = t.get("liquidity_usd", 0)
+            sym = t.get("symbol", "?")
+            addr = t.get("address", "")
+            change_emoji = "📈" if change > 0 else "📉"
+            dex_url = f"https://dexscreener.com/solana/{addr}"
+            lines.append(
+                f"  • <a href='{dex_url}'><b>${sym}</b></a> | MC: ${mc:,.0f} | {change_emoji}{change:+.1f}% | Liq: ${liq:,.0f}"
+            )
+        tokens_section = "\n\n🪙 <b>Tokeny pasujące do trendu:</b>\n" + "\n".join(lines)
+
+    macro_section = ""
+    if macro_signals:
+        macro_section = "\n\n📊 <b>Makro sygnały:</b>\n" + "\n".join(f"  • {m}" for m in macro_signals[:3])
+
+    msg = f"""{fire_emoji} <b>TREND WYKRYTY: {category}</b>{new_tag}
+
+📈 Siła: <b>{strength:.1f}x</b> ponad normę | Score: <b>{score}/10</b>
+
+🔍 <b>Dowody:</b>
+{evidence_text}{macro_section}{tokens_section}
+
+⚠️ <i>To sygnał wczesnego wykrycia — nie rekomendacja kupna. DYOR.</i>"""
+
+    return _send_message(msg, bot_token=bot_token, chat_id=chat_id)
+
+
+def send_macro_alert(signal_type: str, description: str, is_bullish: bool,
+                     bot_token: Optional[str] = None, chat_id: Optional[str] = None) -> bool:
+    """Alert o makro sygnale (altseason, BTC dominance, market cap)."""
+    emoji = "🟢" if is_bullish else "🔴"
+    type_map = {
+        "ALTSEASON_TERRITORY": "🏄 ALTSEASON TERRITORY",
+        "BTC_DOMINANCE_DROP": "📉 BTC DOMINANCE SPADA",
+        "MARKET_CAP_SURGE": "🚀 MARKET CAP SURGE",
+        "MARKET_CAP_DROP": "💥 MARKET CAP SPADA",
+    }
+    header = type_map.get(signal_type, signal_type)
+
+    msg = f"""{emoji} <b>{header}</b>
+
+{description}
+
+📊 <a href='https://coinmarketcap.com/charts/'>CoinMarketCap Charts</a>"""
+
+    return _send_message(msg, bot_token=bot_token, chat_id=chat_id)
+
+
+def send_vc_funding_alert(title: str, url: str, source: str, amount: str, category: str,
+                          bot_token: Optional[str] = None, chat_id: Optional[str] = None) -> bool:
+    """Alert o nowym VC funding w crypto."""
+    msg = f"""💰 <b>VC FUNDING: {category}</b>
+
+<b>{title}</b>
+
+💵 Kwota: <b>{amount}</b>
+📡 Źródło: {source}
+🔗 <a href='{url}'>Czytaj więcej</a>
+
+<i>Funding to wczesny sygnał — projekt może jeszcze nie mieć tokenu.</i>"""
+
+    return _send_message(msg, bot_token=bot_token, chat_id=chat_id)

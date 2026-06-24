@@ -356,3 +356,107 @@ def cleanup_old_avici_snapshots(max_days: int = 30):
     cutoff = int(time.time()) - max_days * 86400
     with _db() as conn:
         conn.execute("DELETE FROM avici_snapshots WHERE recorded_at < ?", (cutoff,))
+
+
+# ── TREND BASELINES ──────────────────────────────────────────────────────────
+
+def _ensure_trend_tables():
+    """Utwórz tabele dla trend detection jeśli nie istnieją."""
+    with _db() as conn:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS narrative_counts (
+                category TEXT NOT NULL,
+                count INTEGER NOT NULL,
+                recorded_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS btc_dominance_history (
+                dominance REAL NOT NULL,
+                recorded_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS alerted_trends (
+                trend_key TEXT PRIMARY KEY,
+                alerted_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_narrative_counts_cat ON narrative_counts(category, recorded_at);
+        """)
+
+
+def save_narrative_counts(counts: dict[str, int]):
+    """Zapisz aktualne liczby wzmianek per kategoria."""
+    _ensure_trend_tables()
+    now = int(time.time())
+    with _db() as conn:
+        for cat, count in counts.items():
+            conn.execute(
+                "INSERT INTO narrative_counts (category, count, recorded_at) VALUES (?, ?, ?)",
+                (cat, count, now)
+            )
+
+
+def get_narrative_baseline(days: int = 7) -> dict[str, float]:
+    """
+    Pobierz średnią liczbę wzmianek per kategoria z ostatnich X dni.
+    Używane jako baseline do wykrywania spike'ów.
+    """
+    _ensure_trend_tables()
+    cutoff = int(time.time()) - days * 86400
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT category, AVG(count) as avg_count FROM narrative_counts WHERE recorded_at > ? GROUP BY category",
+            (cutoff,)
+        ).fetchall()
+    return {r["category"]: float(r["avg_count"]) for r in rows}
+
+
+def save_btc_dominance(dominance: float):
+    """Zapisz aktualny BTC dominance."""
+    _ensure_trend_tables()
+    with _db() as conn:
+        conn.execute(
+            "INSERT INTO btc_dominance_history (dominance, recorded_at) VALUES (?, ?)",
+            (dominance, int(time.time()))
+        )
+
+
+def get_prev_btc_dominance(hours_ago: int = 6) -> float:
+    """Pobierz BTC dominance sprzed X godzin."""
+    _ensure_trend_tables()
+    cutoff = int(time.time()) - hours_ago * 3600
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT dominance FROM btc_dominance_history WHERE recorded_at < ? ORDER BY recorded_at DESC LIMIT 1",
+            (cutoff,)
+        ).fetchone()
+    return float(row["dominance"]) if row else 0.0
+
+
+def was_trend_alerted(trend_key: str, cooldown_hours: int = 12) -> bool:
+    """Sprawdź czy trend był już alertowany w ciągu cooldown_hours."""
+    _ensure_trend_tables()
+    cutoff = int(time.time()) - cooldown_hours * 3600
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM alerted_trends WHERE trend_key = ? AND alerted_at > ?",
+            (trend_key, cutoff)
+        ).fetchone()
+    return row is not None
+
+
+def mark_trend_alerted(trend_key: str):
+    """Oznacz trend jako alertowany."""
+    _ensure_trend_tables()
+    with _db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO alerted_trends (trend_key, alerted_at) VALUES (?, ?)",
+            (trend_key, int(time.time()))
+        )
+
+
+def cleanup_old_trend_data(max_days: int = 14):
+    """Usuń stare dane trend detection."""
+    _ensure_trend_tables()
+    cutoff = int(time.time()) - max_days * 86400
+    with _db() as conn:
+        conn.execute("DELETE FROM narrative_counts WHERE recorded_at < ?", (cutoff,))
+        conn.execute("DELETE FROM btc_dominance_history WHERE recorded_at < ?", (cutoff,))
+        conn.execute("DELETE FROM alerted_trends WHERE alerted_at < ?", (cutoff,))
