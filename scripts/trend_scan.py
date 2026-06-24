@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.config import cfg
+from src.config import cfg, env
 from src.state import (
     init_db, cleanup_expired,
     save_narrative_counts, get_narrative_baseline,
