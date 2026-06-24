@@ -1,0 +1,54 @@
+name: AVICI Weekly Digest — poniedziałkowy raport
+
+on:
+  schedule:
+    # Poniedziałek 7:00 UTC = 9:00 czasu warszawskiego (CEST)
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (nie wysyłaj raportu)'
+        required: false
+        default: 'false'
+
+jobs:
+  avici-digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download state DB
+        uses: actions/download-artifact@v4
+        with:
+          name: state-db
+          path: data/
+        continue-on-error: true
+
+      - name: Run AVICI weekly digest
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          AVICI_TELEGRAM_CHAT_ID: ${{ secrets.AVICI_TELEGRAM_CHAT_ID }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: python scripts/avici_digest.py
+
+      - name: Upload state DB
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: state-db
+          path: data/state.db
+          retention-days: 7
+          overwrite: true

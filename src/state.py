@@ -46,6 +46,27 @@ def init_db():
     """Utwórz tabele jeśli nie istnieją. Wywołaj raz przy starcie."""
     with _db() as conn:
         conn.executescript("""
+            CREATE TABLE IF NOT EXISTS metadao_proposals (
+                proposal_id TEXT PRIMARY KEY,
+                title TEXT,
+                state TEXT,
+                first_seen_at INTEGER NOT NULL,
+                last_seen_at INTEGER NOT NULL,
+                alerted_new INTEGER DEFAULT 0,   -- 1 jeśli wysłano alert "nowa propozycja"
+                alerted_resolved INTEGER DEFAULT 0  -- 1 jeśli wysłano alert o rozstrzygnięciu
+            );
+
+            CREATE TABLE IF NOT EXISTS avici_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                price_usd REAL,
+                price_change_h1 REAL,
+                price_change_h24 REAL,
+                volume_h24 REAL,
+                liquidity_usd REAL,
+                market_cap_usd REAL,
+                recorded_at INTEGER NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS alerted_tokens (
                 address TEXT PRIMARY KEY,
                 symbol TEXT NOT NULL,
@@ -221,3 +242,117 @@ def cleanup_old_social(max_age_days: int = 3):
     cutoff = int(time.time()) - max_age_days * 86400
     with _db() as conn:
         conn.execute("DELETE FROM seen_social WHERE seen_at < ?", (cutoff,))
+
+
+# ── METADAO PROPOSALS ───────────────────────────────────────────────────────
+
+def get_known_proposal_ids() -> set[str]:
+    """Zwróć zestaw ID propozycji które już widzieliśmy."""
+    with _db() as conn:
+        rows = conn.execute("SELECT proposal_id FROM metadao_proposals").fetchall()
+    return {r["proposal_id"] for r in rows}
+
+
+def mark_proposal_seen(proposal_id: str, title: str, state: str):
+    """Dodaj/zaktualizuj propozycję w DB."""
+    now = int(time.time())
+    with _db() as conn:
+        conn.execute("""
+            INSERT INTO metadao_proposals (proposal_id, title, state, first_seen_at, last_seen_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(proposal_id) DO UPDATE SET
+                state = excluded.state,
+                last_seen_at = excluded.last_seen_at
+        """, (proposal_id, title[:200], state, now, now))
+
+
+def was_proposal_new_alerted(proposal_id: str) -> bool:
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT alerted_new FROM metadao_proposals WHERE proposal_id = ?",
+            (proposal_id,)
+        ).fetchone()
+    return bool(row and row["alerted_new"])
+
+
+def mark_proposal_new_alerted(proposal_id: str):
+    with _db() as conn:
+        conn.execute(
+            "UPDATE metadao_proposals SET alerted_new = 1 WHERE proposal_id = ?",
+            (proposal_id,)
+        )
+
+
+def was_proposal_resolved_alerted(proposal_id: str) -> bool:
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT alerted_resolved FROM metadao_proposals WHERE proposal_id = ?",
+            (proposal_id,)
+        ).fetchone()
+    return bool(row and row["alerted_resolved"])
+
+
+def mark_proposal_resolved_alerted(proposal_id: str):
+    with _db() as conn:
+        conn.execute(
+            "UPDATE metadao_proposals SET alerted_resolved = 1 WHERE proposal_id = ?",
+            (proposal_id,)
+        )
+
+
+def get_rpc_proposal_count() -> int:
+    """Pobierz ostatnio zapisaną liczbę kont Autocrat (dla RPC fallback)."""
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT proposal_id FROM metadao_proposals WHERE proposal_id LIKE 'rpc_count_%'"
+        ).fetchone()
+    if not row:
+        return 0
+    try:
+        return int(row["proposal_id"].replace("rpc_count_", ""))
+    except Exception:
+        return 0
+
+
+# ── AVICI SNAPSHOTS ─────────────────────────────────────────────────────────
+
+def save_avici_snapshot(price_usd: float, price_change_h1: float, price_change_h24: float,
+                        volume_h24: float, liquidity_usd: float, market_cap_usd: float):
+    """Zapisz snapshot ceny AVICI (do weekly digest i analizy)."""
+    with _db() as conn:
+        conn.execute("""
+            INSERT INTO avici_snapshots
+            (price_usd, price_change_h1, price_change_h24, volume_h24, liquidity_usd, market_cap_usd, recorded_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (price_usd, price_change_h1, price_change_h24, volume_h24, liquidity_usd, market_cap_usd,
+              int(time.time())))
+
+
+def get_avici_price_7d_ago() -> Optional[float]:
+    """Pobierz cenę AVICI sprzed ~7 dni (dla weekly digest)."""
+    cutoff_min = int(time.time()) - 7 * 86400 - 3600  # -7d ±1h
+    cutoff_max = int(time.time()) - 7 * 86400 + 3600
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT price_usd FROM avici_snapshots WHERE recorded_at BETWEEN ? AND ? ORDER BY recorded_at DESC LIMIT 1",
+            (cutoff_min, cutoff_max)
+        ).fetchone()
+    return float(row["price_usd"]) if row else None
+
+
+def get_avici_snapshots_7d() -> list[dict]:
+    """Pobierz wszystkie snapshoty AVICI z ostatnich 7 dni."""
+    cutoff = int(time.time()) - 7 * 86400
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM avici_snapshots WHERE recorded_at > ? ORDER BY recorded_at ASC",
+            (cutoff,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def cleanup_old_avici_snapshots(max_days: int = 30):
+    """Usuń snapshoty starsze niż X dni."""
+    cutoff = int(time.time()) - max_days * 86400
+    with _db() as conn:
+        conn.execute("DELETE FROM avici_snapshots WHERE recorded_at < ?", (cutoff,))

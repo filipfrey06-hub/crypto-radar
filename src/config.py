@@ -27,6 +27,9 @@ class Env:
     REDDIT_CLIENT_ID: str   = os.getenv("REDDIT_CLIENT_ID", "")
     REDDIT_CLIENT_SECRET: str = os.getenv("REDDIT_CLIENT_SECRET", "")
     REDDIT_USER_AGENT: str  = os.getenv("REDDIT_USER_AGENT", "crypto-radar:v2.0")
+    # AVICI Poland — osobny bot i czat Telegram dla raportów AVICI
+    AVICI_TELEGRAM_BOT_TOKEN: str = os.getenv("AVICI_TELEGRAM_BOT_TOKEN", "")
+    AVICI_TELEGRAM_CHAT_ID: str   = os.getenv("AVICI_TELEGRAM_CHAT_ID", "")
 
     @classmethod
     def validate(cls, require_claude: bool = True, require_reddit: bool = True):

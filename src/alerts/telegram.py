@@ -20,21 +20,32 @@ log = logging.getLogger(__name__)
 TG_BASE = "https://api.telegram.org"
 
 
-def _send_message(text: str, parse_mode: str = "HTML", disable_web_page_preview: bool = True) -> bool:
-    """Wyślij wiadomość przez Telegram Bot API."""
+def _send_message(text: str, parse_mode: str = "HTML", disable_web_page_preview: bool = True,
+                  chat_id: Optional[str] = None, bot_token: Optional[str] = None) -> bool:
+    """
+    Wyślij wiadomość przez Telegram Bot API.
+    chat_id:   opcjonalnie nadpisz domyślny TELEGRAM_CHAT_ID.
+    bot_token: opcjonalnie użyj innego bota (np. AVICI Poland bot).
+    """
     if cfg["general"]["dry_run"]:
-        log.info(f"[DRY RUN] Telegram message:\n{text[:200]}...")
+        log.info(f"[DRY RUN] Telegram message (chat={chat_id or 'default'}):\n{text[:200]}...")
         return True
 
-    if not env.TELEGRAM_BOT_TOKEN or not env.TELEGRAM_CHAT_ID:
-        log.warning("Brak TELEGRAM_BOT_TOKEN lub TELEGRAM_CHAT_ID — pomijam alert")
+    token = bot_token or env.TELEGRAM_BOT_TOKEN
+    if not token:
+        log.warning("Brak bot_token — pomijam alert")
+        return False
+
+    target_chat = chat_id or env.TELEGRAM_CHAT_ID
+    if not target_chat:
+        log.warning("Brak chat_id — pomijam alert")
         return False
 
     try:
         r = requests.post(
-            f"{TG_BASE}/bot{env.TELEGRAM_BOT_TOKEN}/sendMessage",
+            f"{TG_BASE}/bot{token}/sendMessage",
             json={
-                "chat_id": env.TELEGRAM_CHAT_ID,
+                "chat_id": target_chat,
                 "text": text,
                 "parse_mode": parse_mode,
                 "disable_web_page_preview": disable_web_page_preview,
@@ -221,3 +232,174 @@ def send_test_message() -> bool:
     return _send_message(
         "✅ <b>Crypto Radar — test połączenia</b>\n\nBot działa poprawnie. Alerty będą wysyłane na ten czat.",
     )
+
+
+# ── AVICI / MetaDAO alerty ───────────────────────────────────────────────────
+
+def send_avici_price_alert(
+    signal_type: str,
+    priority: str,
+    description: str,
+    price_usd: float,
+    change_h1: float,
+    change_h24: float,
+    volume_h24: float,
+    liquidity_usd: float,
+    market_cap_usd: float,
+    dex_url: str,
+    avici_chat_id: Optional[str] = None,
+    avici_bot_token: Optional[str] = None,
+) -> bool:
+    """Alert cenowy dla $AVICI — wysyłany do czatu Avici Poland."""
+    emoji_map = {"HIGH": "🔴🔴", "MED": "🟡", "LOW": "⚪"}
+    dir_emoji = "📈" if change_h1 > 0 else "📉"
+    emoji = emoji_map.get(priority, "⚪")
+
+    rugcheck_url = f"https://rugcheck.xyz/tokens/BANKJmvhT8tiJRsBSS1n2HryMBPvT5Ze4HU95DUAmeta"
+    birdeye_url  = f"https://birdeye.so/token/BANKJmvhT8tiJRsBSS1n2HryMBPvT5Ze4HU95DUAmeta?chain=solana"
+
+    msg = f"""{emoji} <b>$AVICI — {priority} SIGNAL</b> {dir_emoji}
+
+{description}
+
+📊 <b>Dane:</b>
+  💰 Cena: <code>${price_usd:.6f}</code>
+  📈 Zmiana 1h: <b>{change_h1:+.1f}%</b>
+  📊 Zmiana 24h: <b>{change_h24:+.1f}%</b>
+  💧 Płynność: <code>${liquidity_usd:,.0f}</code>
+  📦 Volume 24h: <code>${volume_h24:,.0f}</code>
+  🏦 Market Cap: <code>${market_cap_usd:,.0f}</code>
+
+🔗 <a href='{dex_url}'>DexScreener</a> | <a href='{birdeye_url}'>Birdeye</a> | <a href='{rugcheck_url}'>RugCheck</a>"""
+
+    return _send_message(msg, chat_id=avici_chat_id, bot_token=avici_bot_token)
+
+
+def send_metadao_proposal_alert(
+    proposal_id: str,
+    title: str,
+    state: str,
+    is_new: bool,
+    pass_price: float = 0.0,
+    fail_price: float = 0.0,
+    url: str = "",
+    avici_chat_id: Optional[str] = None,
+    avici_bot_token: Optional[str] = None,
+) -> bool:
+    """Alert o nowej lub rozstrzygniętej propozycji MetaDAO."""
+    proposals_url = url or f"https://futarchy.metadao.fi/proposals/{proposal_id}"
+
+    if is_new:
+        emoji = "🗳️"
+        header = "NOWA PROPOZYCJA MetaDAO"
+        state_info = "Status: <b>Aktywna</b> — trwa głosowanie rynkowe"
+    else:
+        state_upper = state.upper()
+        if "pass" in state.lower():
+            emoji = "✅"
+            header = "PROPOZYCJA PRZESZŁA"
+        elif "fail" in state.lower() or "reject" in state.lower():
+            emoji = "❌"
+            header = "PROPOZYCJA ODRZUCONA"
+        else:
+            emoji = "📋"
+            header = f"PROPOZYCJA ZAKOŃCZONA"
+        state_info = f"Status: <b>{state_upper}</b>"
+
+    prices_line = ""
+    if pass_price > 0 or fail_price > 0:
+        prices_line = f"\n  🟢 PASS token: <code>${pass_price:.4f}</code> | 🔴 FAIL token: <code>${fail_price:.4f}</code>"
+
+    msg = f"""{emoji} <b>{header}</b>
+
+📝 <i>{title or proposal_id}</i>
+
+{state_info}{prices_line}
+
+🔗 <a href='{proposals_url}'>Zobacz na MetaDAO</a>
+📊 <a href='https://futarchy.metadao.fi/proposals'>Wszystkie propozycje</a>"""
+
+    return _send_message(msg, chat_id=avici_chat_id, bot_token=avici_bot_token)
+
+
+def send_avici_weekly_digest(
+    price_now: float,
+    price_7d_ago: Optional[float],
+    change_24h: float,
+    volume_24h: float,
+    liquidity_usd: float,
+    market_cap_usd: float,
+    meta_price: float,
+    meta_change_24h: float,
+    active_proposals: list[dict],
+    news_items: list[str],
+    avici_chat_id: Optional[str] = None,
+    avici_bot_token: Optional[str] = None,
+) -> bool:
+    """Tygodniowy raport $AVICI — wysyłany w poniedziałek rano do Avici Poland."""
+    from datetime import datetime
+    date_str = datetime.now().strftime("%d.%m.%Y")
+
+    # Zmiana ceny vs 7 dni temu
+    if price_7d_ago and price_7d_ago > 0:
+        change_7d = ((price_now - price_7d_ago) / price_7d_ago) * 100
+        change_7d_str = f"{change_7d:+.1f}%"
+        change_7d_emoji = "📈" if change_7d > 0 else "📉"
+    else:
+        change_7d_str = "N/A (pierwsze uruchomienie)"
+        change_7d_emoji = "📊"
+
+    # Propozycje MetaDAO
+    proposals_section = ""
+    if active_proposals:
+        lines = [f"  • {p.get('title', p.get('proposal_id', '?'))[:60]}" for p in active_proposals[:5]]
+        proposals_section = "\n\n🗳️ <b>Aktywne propozycje MetaDAO:</b>\n" + "\n".join(lines)
+    else:
+        proposals_section = "\n\n🗳️ <b>MetaDAO:</b> Brak aktywnych propozycji"
+
+    # News
+    news_section = ""
+    if news_items:
+        news_lines = [f"  • {n[:80]}" for n in news_items[:5]]
+        news_section = "\n\n📰 <b>Najważniejsze wiadomości tygodnia:</b>\n" + "\n".join(news_lines)
+
+    dex_url = "https://dexscreener.com/solana/BANKJmvhT8tiJRsBSS1n2HryMBPvT5Ze4HU95DUAmeta"
+
+    msg = f"""📊 <b>TYGODNIOWY RAPORT — $AVICI</b>
+📅 {date_str}
+
+💰 <b>Cena $AVICI:</b> <code>${price_now:.6f}</code>
+  {change_7d_emoji} vs 7 dni temu: <b>{change_7d_str}</b>
+  📊 Zmiana 24h: <b>{change_24h:+.1f}%</b>
+  💧 Płynność: <code>${liquidity_usd:,.0f}</code>
+  📦 Volume 24h: <code>${volume_24h:,.0f}</code>
+  🏦 Market Cap: <code>${market_cap_usd:,.0f}</code>
+
+🔵 <b>$META (MetaDAO):</b> <code>${meta_price:.4f}</code> ({meta_change_24h:+.1f}% 24h){proposals_section}{news_section}
+
+🔗 <a href='{dex_url}'>DexScreener AVICI</a> | <a href='https://futarchy.metadao.fi/proposals'>MetaDAO Proposals</a>
+
+<i>Raport generowany automatycznie co poniedziałek 9:00</i>"""
+
+    return _send_message(msg, chat_id=avici_chat_id, bot_token=avici_bot_token)
+
+
+def send_avici_social_alert(
+    title: str,
+    url: str,
+    source: str,
+    snippet: str = "",
+    avici_chat_id: Optional[str] = None,
+    avici_bot_token: Optional[str] = None,
+) -> bool:
+    """Alert o wzmiance AVICI/MetaDAO w newsach."""
+    msg = f"""📰 <b>Wzmianka o AVICI/MetaDAO</b>
+
+<b>{title[:100]}</b>
+
+{f'<i>{snippet[:200]}...</i>' if snippet else ''}
+
+📡 Źródło: {source}
+🔗 <a href='{url}'>Czytaj więcej</a>"""
+
+    return _send_message(msg, chat_id=avici_chat_id, bot_token=avici_bot_token)

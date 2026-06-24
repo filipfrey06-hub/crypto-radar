@@ -152,6 +152,31 @@ alerts:
       MED: 3
       LOW: 1
 
+# --------------- AVICI MONITOR -----------------------------
+avici:
+  token_address: "BANKJmvhT8tiJRsBSS1n2HryMBPvT5Ze4HU95DUAmeta"
+  meta_address:  "METAwkXcqyXKy1AtsSgJ8JiUHwGCafnZL38n3vYmeta"
+  price_spike_high_pct: 15       # >= X% zmiana w 1h → HIGH alert
+  price_spike_med_pct: 10        # >= X% zmiana w 1h → MED alert
+  volume_spike_multiplier: 3.0   # vol_h1 >= Xx średniej godzinowej → MED alert
+  buy_pressure_threshold: 0.75   # >= X txns to buy → MED alert
+  alert_cooldown_h: 2            # cooldown po alerycie (godziny)
+  rss_keywords:
+    - "avici"
+    - "metadao"
+    - "meta dao"
+    - "futarchy"
+    - "avici card"
+    - "AVICI"
+    - "METADAO"
+
+# --------------- METADAO ------------------------------------
+metadao:
+  autocrat_program: "autoQP9RmUNkzzKRc2U5LS6T4XHAkQDTBQ5u83CVXD6"
+  proposals_url: "https://futarchy.metadao.fi/proposals"
+  alert_new_proposals: true
+  alert_resolved_proposals: true
+
 # --------------- OGÓLNE ------------------------------------
 general:
   dry_run: false            # true = nie wysyłaj alertów, tylko loguj
